@@ -578,6 +578,55 @@ describe('transformToChatModelCards', () => {
     });
   });
 
+  it('should use declared abilities instead of the fallback card abilities', async () => {
+    // openrouter has no perplexity/sonar card, so the lookup falls back to
+    // vercelaigateway's, which declares functionCall. OpenRouter serves Sonar
+    // without tool support, so the declared list has to win.
+    const fallbackCard = LOBE_DEFAULT_MODEL_LIST.find((m) => m.id === 'perplexity/sonar')!;
+    expect(fallbackCard.providerId).not.toBe('openrouter');
+    expect(fallbackCard.abilities?.functionCall).toBe(true);
+
+    const result = await transformToAiModelList({
+      modelString: '-all,+perplexity/sonar=Perplexity Sonar<127072:vision:search>',
+      defaultModels: [],
+      providerId: 'openrouter',
+    });
+
+    expect(result).toHaveLength(1);
+    expect(result![0]).toMatchObject({
+      contextWindowTokens: 127072,
+      displayName: 'Perplexity Sonar',
+      id: 'perplexity/sonar',
+      providerId: 'openrouter',
+    });
+    expect(result![0].abilities).toEqual({ search: true, vision: true });
+  });
+
+  it('should use declared abilities when updating a model already in the list', async () => {
+    const knownModel = openaiChatModels.find((m) => m.id === 'gpt-4o')!;
+    expect(knownModel.abilities?.functionCall).toBe(true);
+
+    const result = await transformToAiModelList({
+      modelString: '+gpt-4o<128000:vision>',
+      defaultModels: [knownModel],
+      providerId: 'openai',
+    });
+
+    expect(result!.find((m) => m.id === 'gpt-4o')!.abilities).toEqual({ vision: true });
+  });
+
+  it('should keep the builtin abilities when no abilities are declared', async () => {
+    const fallbackCard = LOBE_DEFAULT_MODEL_LIST.find((m) => m.id === 'perplexity/sonar')!;
+
+    const result = await transformToAiModelList({
+      modelString: '-all,+perplexity/sonar<127072>',
+      defaultModels: [],
+      providerId: 'openrouter',
+    });
+
+    expect(result![0].abilities).toEqual(fallbackCard.abilities);
+  });
+
   it('should have file with builtin models like gpt-4-0125-preview', async () => {
     const result = await transformToAiModelList({
       modelString:

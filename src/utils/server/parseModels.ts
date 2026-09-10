@@ -1,5 +1,6 @@
 import { getModelPropertyWithFallback } from '@lobechat/model-runtime';
 import { merge } from '@lobechat/utils';
+import { isEmpty } from 'es-toolkit/compat';
 import { produce } from 'immer';
 import { type AiFullModelCard, type AiModelType } from 'model-bank';
 
@@ -165,6 +166,11 @@ export const transformToAiModelList = async ({
         }
       }
 
+      // Abilities listed in the model string are the complete set. `merge` is deep and
+      // can only add to a builtin card's abilities, so e.g. `perplexity/sonar<...:search>`
+      // on openrouter would keep the vercelaigateway card's functionCall.
+      const declaredAbilities = isEmpty(toAddModel.abilities) ? undefined : toAddModel.abilities;
+
       // if the model is known, update it based on the known model
       if (knownModel) {
         const index = draft.findIndex((model) => model.id === toAddModel.id);
@@ -172,20 +178,24 @@ export const transformToAiModelList = async ({
 
         // if the model is already in chatModels, update it
         if (modelInList) {
-          draft[index] = merge(modelInList, {
-            ...toAddModel,
-            displayName: toAddModel.displayName || modelInList.displayName || modelInList.id,
-            enabled: true,
-          });
+          draft[index] = {
+            ...merge(modelInList, {
+              ...toAddModel,
+              displayName: toAddModel.displayName || modelInList.displayName || modelInList.id,
+              enabled: true,
+            }),
+            ...(declaredAbilities && { abilities: declaredAbilities }),
+          };
         } else {
           // if the model is not in chatModels, add it
-          draft.push(
-            merge(knownModel, {
+          draft.push({
+            ...merge(knownModel, {
               ...toAddModel,
               displayName: toAddModel.displayName || knownModel.displayName || knownModel.id,
               enabled: true,
             }),
-          );
+            ...(declaredAbilities && { abilities: declaredAbilities }),
+          });
         }
       } else {
         // If the model is not in the builtin list, add it as a new custom model.
